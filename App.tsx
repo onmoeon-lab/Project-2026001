@@ -1,67 +1,165 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { DossierInput } from './components/DossierInput';
-import { DossierProfile, INITIAL_DOSSIER, EnhancementType, DEFAULT_AI_CONFIG, GlobalAIConfig } from './types';
+import { Login } from './components/Login';
+import { AdminDashboard } from './components/AdminDashboard';
+import { 
+  DossierProfile, 
+  INITIAL_DOSSIER, 
+  EnhancementType, 
+  DEFAULT_AI_CONFIG, 
+  AppSettings, 
+  User,
+  DEFAULT_USERS
+} from './types';
 import { generateDossierDocx } from './services/docxService';
-import { FileDown, Sprout, LayoutTemplate, User, Quote, GraduationCap, PenTool, Settings, Lock, X, Save, Home } from 'lucide-react';
+import { FileDown, Sprout, LayoutTemplate, User as UserIcon, Quote, GraduationCap, PenTool, LogOut, Loader2 } from 'lucide-react';
 
-const App: React.FC = () => {
-  // Data State
+export const App: React.FC = () => {
+  // --- Global App Settings (Simulated Persistence) ---
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
+    // In a real app, this would come from an API or LocalStorage
+    const saved = localStorage.getItem('adra_app_settings');
+    let loadedSettings: AppSettings | null = null;
+    
+    if (saved) {
+        try {
+            loadedSettings = JSON.parse(saved);
+        } catch(e) { 
+            console.error("Failed to parse settings", e);
+        }
+    }
+
+    // Safety check: ensure loaded config has the new keys. 
+    // If we changed Enums, old localStorage data might miss 'CHILD_NARRATIVE'.
+    const hasValidAiConfig = loadedSettings?.aiConfig && 
+                             loadedSettings.aiConfig[EnhancementType.CHILD_NARRATIVE] &&
+                             loadedSettings.aiConfig[EnhancementType.TEACHER_EVALUATION];
+
+    if (loadedSettings && hasValidAiConfig) {
+        return loadedSettings;
+    }
+
+    // Fallback: merge existing users/defaults but reset AI Config to new structure
+    return {
+        aiConfig: DEFAULT_AI_CONFIG,
+        defaultDossierValues: loadedSettings?.defaultDossierValues || {
+            schoolName: 'Tongi Children Education Program',
+            donorAgency: 'ADRA Czech',
+            academicYear: '2025',
+            sponsorshipCategory: 'Day',
+        },
+        users: loadedSettings?.users || DEFAULT_USERS
+    };
+  });
+
+  // Save settings when they change
+  useEffect(() => {
+    localStorage.setItem('adra_app_settings', JSON.stringify(appSettings));
+  }, [appSettings]);
+
+
+  // --- Authentication State ---
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginError, setLoginError] = useState<string>('');
+  
+  // --- Navigation State ---
+  // If admin logs in, they see Dashboard. If they click "Open Builder", this becomes 'BUILDER'.
+  // If user logs in, this is always 'BUILDER'.
+  const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'BUILDER'>('LOGIN');
+
+  // --- Builder Data State ---
   const [data, setData] = useState<DossierProfile>(INITIAL_DOSSIER);
-  // AI Config State
-  const [aiConfig, setAiConfig] = useState<GlobalAIConfig>(DEFAULT_AI_CONFIG);
   
-  // UI/Admin State
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminUsername, setAdminUsername] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
-  
-  // Editing state for config
-  const [editingConfig, setEditingConfig] = useState<GlobalAIConfig>(DEFAULT_AI_CONFIG);
+  // --- UI State ---
+  const [isGenerating, setIsGenerating] = useState(false);
 
+  // --- Auth Handlers ---
+  const handleLogin = (u: string, p: string) => {
+    const user = appSettings.users.find(usr => usr.username === u && usr.password === p);
+    if (user) {
+        setCurrentUser(user);
+        setLoginError('');
+        
+        // Initialize builder with defaults
+        setData(prev => ({
+            ...prev,
+            ...appSettings.defaultDossierValues,
+            // Override preparedBy with the logged-in user's actual Name
+            preparedBy: user.name,
+            // Ensure prepared date is set if not default
+            preparedDate: appSettings.defaultDossierValues.preparedDate || new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
+        }));
+
+        if (user.role === 'ADMIN') {
+            setView('DASHBOARD');
+        } else {
+            setView('BUILDER');
+        }
+    } else {
+        setLoginError('Invalid credentials');
+    }
+  };
+
+  const handleLogout = () => {
+      setCurrentUser(null);
+      setView('LOGIN');
+      setData(INITIAL_DOSSIER); // Reset form
+  };
+
+  // --- Builder Handlers ---
   const updateField = (field: keyof DossierProfile, value: string) => {
     setData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleExport = () => {
-    generateDossierDocx(data);
-  };
-
-  // Login Logic
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simple mock auth
-    if (adminUsername === 'admin' && adminPassword === 'adra2025') {
-      setIsAdminLoggedIn(true);
-      setEditingConfig(aiConfig); // Load current config into editor
-      setLoginError("");
-    } else {
-      setLoginError("Invalid credentials");
+  const handleExport = async () => {
+    setIsGenerating(true);
+    try {
+        // Small delay to allow UI to render the loader even if operation is fast
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await generateDossierDocx(data);
+    } catch (error) {
+        console.error("Export failed", error);
+        alert("Failed to generate document. Please try again.");
+    } finally {
+        setIsGenerating(false);
     }
   };
 
-  const saveConfig = () => {
-    setAiConfig(editingConfig);
-    setShowAdminModal(false);
-  };
-
-  const updateConfigField = (type: EnhancementType, field: 'systemInstruction' | 'promptTemplate', value: string) => {
-    setEditingConfig(prev => ({
-      ...prev,
-      [type]: {
-        ...prev[type],
-        [field]: value
-      }
-    }));
-  };
-
-  // Context string for AI to understand the child better
   const childContext = `Child Name: ${data.childName}, Age/Grade: ${data.grade}, Aim: ${data.aimInLife}`;
 
+  // --- Render Logic ---
+
+  if (view === 'LOGIN') {
+      return <Login onLogin={handleLogin} error={loginError} />;
+  }
+
+  if (view === 'DASHBOARD' && currentUser?.role === 'ADMIN') {
+      return (
+          <AdminDashboard 
+            settings={appSettings}
+            onUpdateSettings={setAppSettings}
+            onLogout={handleLogout}
+            onOpenBuilder={() => setView('BUILDER')}
+          />
+      );
+  }
+
+  // --- BUILDER VIEW ---
   return (
-    <div className="min-h-screen bg-slate-50 py-6 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 py-6 px-4 sm:px-6 lg:px-8 relative">
       
+      {/* Loading Overlay */}
+      {isGenerating && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center animate-in fade-in zoom-in duration-200 max-w-sm w-full mx-4">
+                <Loader2 className="w-12 h-12 text-green-600 animate-spin mb-4" />
+                <h3 className="text-lg font-bold text-slate-900">Generating Report</h3>
+                <p className="text-slate-500 text-sm mt-2 text-center">Fetching assets and compiling your document. This may take a moment...</p>
+            </div>
+        </div>
+      )}
+
       {/* Top Navigation / Action Bar */}
       <div className="max-w-[1600px] mx-auto mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -70,24 +168,36 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">ADRA Report Builder</h1>
-            <p className="text-sm text-slate-500">Child Annual Progress Report (APR) 2025</p>
+            <p className="text-sm text-slate-500">
+                Logged in as <span className="font-semibold">{currentUser?.name || currentUser?.username}</span>
+                {currentUser?.role === 'ADMIN' && <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">Admin Mode</span>}
+            </p>
           </div>
         </div>
         
         <div className="flex items-center gap-3">
+          {currentUser?.role === 'ADMIN' && (
+             <button
+                onClick={() => setView('DASHBOARD')}
+                className="text-slate-600 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors"
+            >
+                Back to Dashboard
+            </button>
+          )}
           <button
-            onClick={() => setShowAdminModal(true)}
-            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors"
+            onClick={handleLogout}
+            className="flex items-center gap-2 text-red-600 hover:text-red-700 px-3 py-2 text-sm font-medium transition-colors border border-transparent hover:bg-red-50 rounded"
           >
-            <Settings className="w-4 h-4" />
-            Admin Panel
+            <LogOut className="w-4 h-4" />
+            Logout
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white px-5 py-2.5 rounded shadow-sm transition-all font-medium text-sm"
+            disabled={isGenerating}
+            className={`flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white px-5 py-2.5 rounded shadow-sm transition-all font-medium text-sm ${isGenerating ? 'opacity-70 cursor-wait' : ''}`}
           >
             <FileDown className="w-4 h-4" />
-            Export Report (.docx)
+            {isGenerating ? 'Exporting...' : 'Export Report (.docx)'}
           </button>
         </div>
       </div>
@@ -115,7 +225,7 @@ const App: React.FC = () => {
           {/* Child Bio Data */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex items-center gap-2">
-              <User className="w-4 h-4 text-green-600" />
+              <UserIcon className="w-4 h-4 text-green-600" />
               <h2 className="text-xs font-bold text-green-700 uppercase tracking-wide">Child Information</h2>
             </div>
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
@@ -164,7 +274,7 @@ const App: React.FC = () => {
                 onChange={(v) => updateField('aboutSelfAndFuture', v)}
                 type="textarea"
                 enableAI={true}
-                aiConfig={aiConfig[EnhancementType.CHILD_VOICE]}
+                aiConfig={appSettings.aiConfig[EnhancementType.CHILD_NARRATIVE]}
                 context={childContext}
                 placeholder="My name is... I want to become..."
               />
@@ -175,7 +285,7 @@ const App: React.FC = () => {
                 onChange={(v) => updateField('homeDescription', v)}
                 type="textarea"
                 enableAI={true}
-                aiConfig={aiConfig[EnhancementType.DESCRIPTIVE]}
+                aiConfig={appSettings.aiConfig[EnhancementType.CHILD_NARRATIVE]}
                 context={childContext}
                 placeholder="I live with my parents in..."
               />
@@ -186,7 +296,7 @@ const App: React.FC = () => {
                 onChange={(v) => updateField('schoolDescription', v)}
                 type="textarea"
                 enableAI={true}
-                aiConfig={aiConfig[EnhancementType.DESCRIPTIVE]}
+                aiConfig={appSettings.aiConfig[EnhancementType.CHILD_NARRATIVE]}
                 context={childContext}
                 placeholder="My school has a big playground..."
               />
@@ -197,7 +307,7 @@ const App: React.FC = () => {
                 onChange={(v) => updateField('interestingStory', v)}
                 type="textarea"
                 enableAI={true}
-                aiConfig={aiConfig[EnhancementType.CHILD_VOICE]}
+                aiConfig={appSettings.aiConfig[EnhancementType.CHILD_NARRATIVE]}
                 context={childContext}
                 placeholder="One interesting experience..."
               />
@@ -216,7 +326,7 @@ const App: React.FC = () => {
                 onChange={(v) => updateField('teachersRemarks', v)}
                 type="textarea"
                 enableAI={true}
-                aiConfig={aiConfig[EnhancementType.TEACHER_REMARK]}
+                aiConfig={appSettings.aiConfig[EnhancementType.TEACHER_EVALUATION]}
                 context={childContext}
                 placeholder="He/She is a polite student..."
               />
@@ -260,7 +370,7 @@ const App: React.FC = () => {
                 <div className="text-center mb-4">
                   <div className="flex items-center justify-center gap-3 mb-1">
                     <img 
-                      src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/ADRA_Logo.svg/800px-ADRA_Logo.svg.png" 
+                      src="https://adra.org.nz/wp-content/uploads/2021/08/ADRA-Horizontal-Logo.png" 
                       alt="ADRA Logo" 
                       className="h-10 w-auto object-contain"
                     />
@@ -342,161 +452,6 @@ const App: React.FC = () => {
         </div>
 
       </div>
-
-      {/* Admin Modal */}
-      {showAdminModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex justify-between items-center p-6 border-b border-slate-200">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-indigo-600" />
-                Admin Panel: AI Configuration
-              </h2>
-              <button onClick={() => setShowAdminModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
-              {!isAdminLoggedIn ? (
-                <div className="max-w-xs mx-auto text-center space-y-4 py-12">
-                  <div className="bg-slate-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Lock className="w-8 h-8 text-slate-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold">Admin Login</h3>
-                  <form onSubmit={handleLogin} className="space-y-3">
-                    <input 
-                      type="text" 
-                      placeholder="Username" 
-                      value={adminUsername}
-                      onChange={(e) => setAdminUsername(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                    <input 
-                      type="password" 
-                      placeholder="Password" 
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                    {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
-                    <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 font-medium">
-                      Login
-                    </button>
-                  </form>
-                  <p className="text-xs text-slate-400">Default: admin / adra2025</p>
-                </div>
-              ) : (
-                <div className="space-y-8">
-                  <p className="text-sm text-slate-600 bg-blue-50 p-4 rounded-md border border-blue-100">
-                    Customize how the AI enhances text for each section. Use <code>{`{{text}}`}</code> as the placeholder for the user input and <code>{`{{context}}`}</code> for child details.
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Child Voice Config */}
-                    <div className="border border-slate-200 rounded-lg p-5">
-                      <div className="flex items-center gap-2 mb-4">
-                        <User className="w-4 h-4 text-purple-600" />
-                        <h3 className="font-bold text-slate-800">Child Voice Settings</h3>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">System Instruction (Persona)</label>
-                           <textarea 
-                            value={editingConfig.CHILD_VOICE.systemInstruction}
-                            onChange={(e) => updateConfigField(EnhancementType.CHILD_VOICE, 'systemInstruction', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-20"
-                           />
-                        </div>
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">Prompt Template</label>
-                           <textarea 
-                            value={editingConfig.CHILD_VOICE.promptTemplate}
-                            onChange={(e) => updateConfigField(EnhancementType.CHILD_VOICE, 'promptTemplate', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-32 font-mono"
-                           />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Descriptive Config */}
-                    <div className="border border-slate-200 rounded-lg p-5">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Home className="w-4 h-4 text-orange-600" />
-                        <h3 className="font-bold text-slate-800">Descriptive Settings</h3>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">System Instruction (Persona)</label>
-                           <textarea 
-                            value={editingConfig.DESCRIPTIVE.systemInstruction}
-                            onChange={(e) => updateConfigField(EnhancementType.DESCRIPTIVE, 'systemInstruction', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-20"
-                           />
-                        </div>
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">Prompt Template</label>
-                           <textarea 
-                            value={editingConfig.DESCRIPTIVE.promptTemplate}
-                            onChange={(e) => updateConfigField(EnhancementType.DESCRIPTIVE, 'promptTemplate', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-32 font-mono"
-                           />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Teacher Remark Config */}
-                    <div className="border border-slate-200 rounded-lg p-5">
-                      <div className="flex items-center gap-2 mb-4">
-                        <GraduationCap className="w-4 h-4 text-green-600" />
-                        <h3 className="font-bold text-slate-800">Teacher Remark Settings</h3>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">System Instruction (Persona)</label>
-                           <textarea 
-                            value={editingConfig.TEACHER_REMARK.systemInstruction}
-                            onChange={(e) => updateConfigField(EnhancementType.TEACHER_REMARK, 'systemInstruction', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-20"
-                           />
-                        </div>
-                        <div>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">Prompt Template</label>
-                           <textarea 
-                            value={editingConfig.TEACHER_REMARK.promptTemplate}
-                            onChange={(e) => updateConfigField(EnhancementType.TEACHER_REMARK, 'promptTemplate', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded p-2 h-32 font-mono"
-                           />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {isAdminLoggedIn && (
-              <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                <button 
-                  onClick={() => setShowAdminModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={saveConfig}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  Save Configurations
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
-
-export default App;

@@ -1,15 +1,70 @@
+
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ImageRun, HeightRule, VerticalAlign } from "docx";
 import FileSaver from "file-saver";
 import { DossierProfile } from "../types";
 
-// Hardcoded Base64 for ADRA Logo (Green Logo)
-// This avoids network/CORS issues during DOCX generation.
-const LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAJYAAAAyCAYAAACjbLjCAAAACXBIWXMAAAsTAAALEwEAmpwYAAAF10lEQVR4nO2cW2wUVRzG/zO73XZbWqBAUbG0F6hcbC88gAmC0SRGEx940BeiL74YNRHTB42J8UF9MZEQEw0KxnBCSIyJEA0vlQtiBGkLhbYUuVVoW9rutu3OzI5nZnc6u512Z3bO7Hj+ky/tnDnzf/7fmfOfM2e2CIIgCIIgCIIgCIIgCIIgCIIgCIIgCIIgCIIgCIIgCIIgCIIgCCIf9O0604jO1hY01/uQ5/UAAAoFhMciGL8xhuGr9xCORhWdm56E09qEzo4WvN5UDwDweT1oa/KjpaEeAAIBP25fv4+hK6OKzk592tpb0N7aAgDweT14rqHu/3/z+7y4dOkqRkZuKTrfC0F320s40NUCn8cDAMjzeLC/uw37u9sAALleD3rabqCns1XRuRkM5rY2dO9oBQDkeT146flGvNRUDwAo5HnQ3uTHC831AAAgT0Dbcz60N/kUnZ8e6G57Cfs6mwEABV4P9ne1Yl9nCwAgz+NBd2crutpbFZ2bwdC160xje3M98jz/9622Jj9eaKoHAOR5PdjW5EdrQ/3/f9vX5MP+7jZF56Yn4bQ2obOtBbne//pWnrcA+7vb0N7aAgDwF/iwv6sV+7vaFJ2bwdDd9hL2dbbA5/H8p2/1tL2IntZW5Hk88Hk86OlsRU/bC0XnZiD07TrT2N7SjDyvBwDQ3ORDW5MfAJDnLZjXty7fGMNwOApB58L3Qk11Hna0NOGF5noAQJ7Xg5ea6tHW5AcA5Hk82NfVgv1dC/atgK8A3Z2t6G57UdG5GQzmtjZ072hFntcDAHDaCuhua0F32wJ9K+ArQHenct/K90JN9f8v1N7kR1uTHwCQ5/Vgf1cL9ne1KDo3PQmn9T/XW3negv9cb+V5POjpbEVPe6uiczMYuttu4uD+Vng9HgBAoddbsG/leTzo7mxFV3urovMzGLp3tKKQ5wEAOO0F7O9qxb6uFgBAnsddsG/leTzY392G/d1tis7NYDB37EBPSzMAwGkvoLutBd1tLwEA8rwF6O5sRXdnq6JzMxi6217Cvs5m5HkLAAB5Xg/2d7Vif9eCfasC3Z2t6GpvVXR+etC360wjejpaUcjzAACc9gL2dbViv0r6VoG+XWca0dnagpZ6H/K8HgBAoYDwWATjN8YwfPUewtGoovMyCMyX61t53gL2dbVif1eLovMyCIy3AN1tyxdqT9sL2NfVouj8DAKjyr5VoK+nHQv2rTyPBz2drei5w76V74Wa6jzs3tGCF5rqAQB5Xg/am/xoa/IDAPI8HuzrakFfe6uiczMYzG1t6N7RigKvBwDgKyjYtwK+AnR3tqK77UVF52YwGE8B9nW2oJDrAQDkeT3Y39WK/Z0tAIA8jwfdna3oam9VdG4Gg/EUoK+zBYU8DwDAaV+wb/kK0N3Ziq72VkXnZjB0t72EfZ3NyPMWAADyvB7s72rF/q4W5Hk88Hk86OlsRU/bC4rOzWDoa3sRPS0t8Ho8AIDCXG/lK0BPZyt62l5QdG4GQ09LM9rqfQCAQp4H7U1+tDX5AQB5Xg/2dbVgX1erovMzCIy3AN1tL2FfZzMAIM9bgP1dbdhfom8FfAXo7mxFd2erovMzCIy3AH097SjwFgAAeT6CvhXwFaC7sxXdbS8qOi+Doa/nLHbs2A6v1wMAcNor6Fu9hP1dC/atgK8A3Z2t6G57UdG5GQzmtjZ072hFntcDAHDaC+hua0F32wJ9K+ArQHenct/K90JN9f8v1N7kR1uTHwCQ5/Vgf1cL9ne1KDo3PQmn9T/XW3negv9cb+V5POjpbEVPe6uiczMY/gI3m3z6v+nQ7wAAAABJRU5ErkJggg==";
+// --- CONFIGURATION ---
+
+// OPTION 1: Best for reliability/offline. 
+// Convert your PNG to Base64 (online tool like https://www.base64-image.de/) and paste the string here.
+// If this string is populated, the app will use it and skip the network fetch.
+const LOGO_BASE64: string = ""; 
+
+// OPTION 2: Network Fetch
+const LOGO_URL_DIRECT = "https://adra.org.nz/wp-content/uploads/2021/08/ADRA-Horizontal-Logo.png";
+// Using corsproxy.io which is often more reliable than allorigins for images
+const LOGO_URL_PROXY = `https://corsproxy.io/?${encodeURIComponent(LOGO_URL_DIRECT)}`;
+
+// --- HELPERS ---
+
+const convertBase64ToUint8Array = (base64String: string): Uint8Array => {
+  // Remove data URL prefix if present (e.g., "data:image/png;base64,")
+  const base64Clean = base64String.replace(/^data:image\/(png|jpg|jpeg);base64,/, "");
+  const binaryString = atob(base64Clean);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+};
+
+// 1x1 Transparent Pixel Fallback
+const FALLBACK_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+const getImageData = async (url: string, retries = 2): Promise<Uint8Array> => {
+  // 1. Prefer Hardcoded Base64 if available
+  if (LOGO_BASE64.length > 100) {
+    try {
+      return convertBase64ToUint8Array(LOGO_BASE64);
+    } catch (e) {
+      console.error("Invalid Base64 string provided", e);
+    }
+  }
+
+  // 2. Try Fetching
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    } catch (error) {
+      console.warn(`Attempt ${i + 1} to load logo failed.`);
+      // Short delay
+      if (i < retries - 1) await new Promise(res => setTimeout(res, 500));
+    }
+  }
+
+  // 3. Fail Gracefully to Fallback (prevents app crash)
+  console.warn("Using fallback image due to network errors.");
+  return convertBase64ToUint8Array(FALLBACK_IMAGE);
+};
 
 export const generateDossierDocx = async (data: DossierProfile) => {
   
-  // Convert Base64 to Uint8Array
-  const imageBytes = Uint8Array.from(atob(LOGO_BASE64), c => c.charCodeAt(0));
+  // Fetch logo image data
+  const imageBytes = await getImageData(LOGO_URL_PROXY);
 
   const FONT_HEADER = "Arial"; 
   const FONT_BODY = "Arial Narrow";
