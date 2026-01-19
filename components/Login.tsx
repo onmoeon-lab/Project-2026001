@@ -77,9 +77,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin, error }) => {
         </form>
       </div>
 
+      {/* <p className="mt-8 text-xs text-slate-400">
+        © 2026 ONMOEON. v1.1.1
+      </p> */}
+
       <p className="mt-8 text-xs text-slate-400">
-        © 2026 ONMEON.
+        © 2026{" "}
+        <a
+          href="https://onmoaw.github.io/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-600 hover:text-slate-900 underline"
+        >
+          ONMEON
+        </a>
+        . v1.1.2
       </p>
+
     </div>
   );
 };
