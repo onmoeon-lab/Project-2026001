@@ -15,50 +15,25 @@ import {
   INITIAL_CASE_HISTORY
 } from './types';
 import { generateDossierDocx, generateCaseHistoryDocx } from './services/docxService';
+import { supabase } from './services/supabaseClient'; // Import the client
 import { FileDown, Sprout, LayoutTemplate, User as UserIcon, Quote, GraduationCap, PenTool, LogOut, Loader2, FileText, ClipboardList, Key, X } from 'lucide-react';
 
+// --- 1. DEFINE THE MISSING VARIABLE HERE ---
+const DEFAULT_INITIAL_SETTINGS: AppSettings = {
+    aiConfig: DEFAULT_AI_CONFIG,
+    defaultDossierValues: {
+        schoolName: 'Tongi Children Education Program',
+        donorAgency: 'ADRA Czech',
+        academicYear: '2025',
+        sponsorshipCategory: 'Day',
+    },
+    users: DEFAULT_USERS // Keeping this to prevent crashes in AdminDashboard, even though we use Supabase Auth
+};
+
 export const App: React.FC = () => {
-  // --- Global App Settings (Simulated Persistence) ---
-  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
-    // In a real app, this would come from an API or LocalStorage
-    const saved = localStorage.getItem('adra_app_settings');
-    let loadedSettings: AppSettings | null = null;
-    
-    if (saved) {
-        try {
-            loadedSettings = JSON.parse(saved);
-        } catch(e) { 
-            console.error("Failed to parse settings", e);
-        }
-    }
-
-    // Safety check: ensure loaded config has the new keys. 
-    const hasValidAiConfig = loadedSettings?.aiConfig && 
-                             loadedSettings.aiConfig[EnhancementType.CHILD_NARRATIVE] &&
-                             loadedSettings.aiConfig[EnhancementType.TEACHER_EVALUATION] && 
-                             loadedSettings.aiConfig[EnhancementType.CASE_HISTORY_NARRATIVE];
-
-    if (loadedSettings && hasValidAiConfig) {
-        return loadedSettings;
-    }
-
-    return {
-        aiConfig: DEFAULT_AI_CONFIG,
-        defaultDossierValues: loadedSettings?.defaultDossierValues || {
-            schoolName: 'Tongi Children Education Program',
-            donorAgency: 'ADRA Czech',
-            academicYear: '2025',
-            sponsorshipCategory: 'Day',
-        },
-        users: loadedSettings?.users || DEFAULT_USERS
-    };
-  });
-
-  // Save settings when they change
-  useEffect(() => {
-    localStorage.setItem('adra_app_settings', JSON.stringify(appSettings));
-  }, [appSettings]);
-
+  // --- Global App Settings ---
+  // Start with defaults, then fetch from Supabase
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_INITIAL_SETTINGS);
 
   // --- Authentication State ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -80,43 +55,108 @@ export const App: React.FC = () => {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('adra_user_api_key') || '');
 
-  // --- Auth Handlers ---
-  const handleLogin = (u: string, p: string) => {
-    const user = appSettings.users.find(usr => usr.username === u && usr.password === p);
-    if (user) {
-        setCurrentUser(user);
-        setLoginError('');
-        
-        // Initialize APR builder with defaults
-        setData(prev => ({
-            ...prev,
-            ...appSettings.defaultDossierValues,
-            preparedBy: user.name,
-            preparedDate: appSettings.defaultDossierValues.preparedDate || new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
-        }));
+  // --- 2. NEW: Fetch Settings from Supabase on Load ---
+  useEffect(() => {
+    const fetchSettings = async () => {
+        try {
+            // Assuming you created a table 'app_settings' with a column 'config'
+            const { data, error } = await supabase
+                .from('app_settings')
+                .select('config')
+                .single(); // Get the single row of config
 
-        // Initialize CSP builder with defaults
-        setCspData(prev => ({
-            ...prev,
-            // Map common defaults
-            schoolName: appSettings.defaultDossierValues.schoolName || prev.schoolName,
-            donorAgency: appSettings.defaultDossierValues.donorAgency || prev.donorAgency,
-            sponsorshipCategory: appSettings.defaultDossierValues.sponsorshipCategory || prev.sponsorshipCategory,
-            preparedBy: user.name,
-            preparedDate: appSettings.defaultDossierValues.preparedDate || new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
-        }));
-
-        if (user.role === 'ADMIN') {
-            setView('DASHBOARD');
-        } else {
-            setView('BUILDER');
+            if (data && data.config) {
+                setAppSettings(data.config);
+            }
+        } catch (err) {
+            console.error("Could not fetch settings from Supabase, using defaults.", err);
         }
-    } else {
+    };
+    fetchSettings();
+  }, []);
+
+  // --- 3. NEW: Save Settings to Supabase when Changed ---
+  const handleUpdateSettings = async (newSettings: AppSettings) => {
+      setAppSettings(newSettings);
+      
+      // Upsert into Supabase (assumes you have a row with id=1)
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert({ id: 1, config: newSettings });
+      
+      if (error) {
+          console.error("Failed to save settings to cloud", error);
+          alert("Saved locally, but failed to sync to cloud.");
+      }
+  };
+
+  // --- 4. NEW: Auth Handler using Supabase ---
+  const handleLogin = async (u: string, p: string) => {
+    setLoginError('');
+    
+    // Attempt Supabase Login
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: u,
+        password: p
+    });
+
+    if (error) {
+        // Fallback: Check local users (useful if Supabase isn't fully set up yet or for 'admin' testing)
+        const localUser = appSettings.users.find(usr => usr.username === u && usr.password === p);
+        if (localUser) {
+            setCurrentUser(localUser);
+            setupUserSession(localUser);
+            return;
+        }
+        
         setLoginError('Invalid credentials');
+        return;
+    }
+
+    if (authData.user) {
+        // Create a User object from Supabase data
+        // Note: You might need a 'profiles' table in Supabase to store "Role" and "Name"
+        const user: User = {
+            username: authData.user.email || u,
+            password: '', // Don't store this
+            name: authData.user.user_metadata?.full_name || 'Staff Member',
+            role: authData.user.email?.includes('admin') ? 'ADMIN' : 'USER', // Simple role logic based on email
+            allowAI: true
+        };
+        setCurrentUser(user);
+        setupUserSession(user);
     }
   };
 
-  const handleLogout = () => {
+  const setupUserSession = (user: User) => {
+    // Initialize APR builder with defaults
+    setData(prev => ({
+        ...prev,
+        ...appSettings.defaultDossierValues,
+        preparedBy: user.name,
+        preparedDate: appSettings.defaultDossierValues.preparedDate || new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
+    }));
+
+    // Initialize CSP builder with defaults
+    setCspData(prev => ({
+        ...prev,
+        // Map common defaults
+        schoolName: appSettings.defaultDossierValues.schoolName || prev.schoolName,
+        donorAgency: appSettings.defaultDossierValues.donorAgency || prev.donorAgency,
+        sponsorshipCategory: appSettings.defaultDossierValues.sponsorshipCategory || prev.sponsorshipCategory,
+        preparedBy: user.name,
+        preparedDate: appSettings.defaultDossierValues.preparedDate || new Date().toLocaleDateString('en-GB').replace(/\//g, '.')
+    }));
+
+    if (user.role === 'ADMIN') {
+        setView('DASHBOARD');
+    } else {
+        setView('BUILDER');
+    }
+  };
+
+  const handleLogout = async () => {
+      await supabase.auth.signOut();
       setCurrentUser(null);
       setView('LOGIN');
       setData(INITIAL_DOSSIER);
@@ -169,7 +209,7 @@ export const App: React.FC = () => {
       return (
           <AdminDashboard 
             settings={appSettings}
-            onUpdateSettings={setAppSettings}
+            onUpdateSettings={handleUpdateSettings}
             onLogout={handleLogout}
             onOpenBuilder={() => setView('BUILDER')}
           />
