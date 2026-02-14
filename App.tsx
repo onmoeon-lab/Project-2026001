@@ -957,7 +957,7 @@ export const App: React.FC = () => {
                                             </div>
                                         </div>
                                         <h4 className="font-bold text-sm mt-3">
-                                            {reportType === 'APR' ? 'Child Annual Progress Report (APR) 2025' : 'Child Sponsorship Profile/Case History'}
+                                            {reportType === 'APR' ? `Child Annual Progress Report (APR) ${data.academicYear}` : 'Child Sponsorship Profile/Case History'}
                                         </h4>
                                     </div>
 

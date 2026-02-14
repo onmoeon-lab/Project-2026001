@@ -173,11 +173,12 @@ const createHeaderTable = (imageBytes: Uint8Array, title: string) => {
             width: { size: 20, type: WidthType.PERCENTAGE },
             children: [
               new Paragraph({
+                alignment: AlignmentType.CENTER,
                 children: [
                   new ImageRun({
                     data: imageBytes,
                     transformation: {
-                      width: 150,
+                      width: 170,
                       height: 50,
                     },
                     type: "png",
@@ -187,18 +188,19 @@ const createHeaderTable = (imageBytes: Uint8Array, title: string) => {
             ],
           }),
           new TableCell({
-            verticalAlign: VerticalAlign.BOTTOM,
+            verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
+                alignment: AlignmentType.CENTER,
                 children: [
                   new TextRun({
                     text: "Adventist Development and Relief Agency Bangladesh",
                     bold: true,
-                    size: 24, // 12pt
+                    size: 28,
                     font: FONT_HEADER,
                   }),
                 ],
-                spacing: { after: 100 },
+                spacing: { after: 50 },
               }),
             ],
           }),
@@ -233,14 +235,14 @@ export const generateDossierDocx = async (data: DossierProfile) => {
         children: [
           createHeaderTable(
             imageBytes,
-            "Child Annual Progress Report (APR) 2025",
+            `Child Annual Progress Report (APR) ${data.academicYear}`,
           ),
 
           new Paragraph({
-            text: "Child Annual Progress Report (APR) 2025",
+            text: `Child Annual Progress Report (APR) ${data.academicYear}`,
             heading: HeadingLevel.HEADING_2,
             alignment: AlignmentType.CENTER,
-            spacing: { before: 200, after: 200 },
+            spacing: { before: 200, after: 300 },
             run: { bold: true, size: 28, font: FONT_HEADER, color: "000000" },
           }),
 
@@ -373,7 +375,7 @@ export const generateDossierDocx = async (data: DossierProfile) => {
               }),
             ],
           }),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ text: "", spacing: { after: 100 } }),
           createQuestionBlock(
             "Write about yourself and your future:",
             data.aboutSelfAndFuture,
@@ -387,10 +389,10 @@ export const generateDossierDocx = async (data: DossierProfile) => {
             data.schoolDescription,
           ),
           createQuestionBlock(
-            "What interesting story/experience has happened in your life/family?",
+            "What interesting story/experience has happened in your life/family?:",
             data.interestingStory,
           ),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ text: "", spacing: { after: 100 } }),
           createQuestionBlock(
             "Teacher's remarks about the child:",
             data.teachersRemarks,
@@ -544,18 +546,20 @@ export const generateCaseHistoryDocx = async (data: CaseHistoryProfile) => {
                         "Hobby",
                         data.hobby,
                       ),
+                      createSplitFieldRow(
+                        "Father's Name",
+                        data.fathersName,
+                        "Mother's Name",
+                        data.mothersName,
+                      ),
 
-                      createFieldLine("Father's Name", data.fathersName),
-                      createFieldLine("Mother's Name", data.mothersName),
-                      createFieldLine(
+                      createSplitFieldRow(
                         "Literacy of Father",
                         data.fatherLiteracy,
-                      ),
-                      createFieldLine(
                         "Literacy of Mother",
                         data.motherLiteracy,
                       ),
-
+                      
                       new Paragraph({
                         children: [
                           new TextRun({
@@ -585,7 +589,7 @@ export const generateCaseHistoryDocx = async (data: CaseHistoryProfile) => {
                             size: FONT_SIZE_NORMAL,
                           }),
                         ],
-                        spacing: { after: 100 },
+                        spacing: { after: 50 },
                       }),
 
                       createSplitFieldRow(
@@ -605,7 +609,7 @@ export const generateCaseHistoryDocx = async (data: CaseHistoryProfile) => {
                         width: { size: 100, type: WidthType.PERCENTAGE },
                         rows: [
                           new TableRow({
-                            height: { value: 4500, rule: HeightRule.EXACT },
+                            height: { value: 3500, rule: HeightRule.EXACT },
                             children: [
                               new TableCell({
                                 children: [],
@@ -637,10 +641,10 @@ export const generateCaseHistoryDocx = async (data: CaseHistoryProfile) => {
                         ],
                       }),
                       new Paragraph({
-                        text: "Profile Picture",
+                        text: "Picture",
                         alignment: AlignmentType.CENTER,
                         spacing: { before: 100 },
-                        run: { font: FONT_BODY, size: 20 },
+                        run: { font: FONT_BODY, size: 24 },
                       }),
                     ],
                   }),
@@ -649,7 +653,7 @@ export const generateCaseHistoryDocx = async (data: CaseHistoryProfile) => {
             ],
           }),
 
-          new Paragraph({ text: "", spacing: { after: 300 } }),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
 
           createQuestionBlock("Child Profile:", data.childProfile),
           createQuestionBlock("Family Background:", data.familyBackground),
