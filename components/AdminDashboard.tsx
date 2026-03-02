@@ -152,7 +152,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${activeTab === 'DEFAULTS' ? 'bg-white text-green-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}
                         >
                             <FileText className="w-4 h-4" />
-                            General Defaults
+                            Default Values
                         </button>
                         <button
                             onClick={() => setActiveTab('AI')}
